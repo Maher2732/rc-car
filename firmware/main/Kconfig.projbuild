@@ -1,0 +1,31 @@
+menu "RC Car Configuration"
+
+    choice BOARD_ROLE
+        prompt "Board role"
+        default BOARD_ROLE_SERVO
+        help
+            What this ESP32 does. All roles share one codebase.
+
+        config BOARD_ROLE_SERVO
+            bool "Steering servo (angles over UART)"
+        config BOARD_ROLE_CAN_SENDER
+            bool "CAN sender (test frame every second)"
+        config BOARD_ROLE_CAN_RECEIVER
+            bool "CAN receiver (listen-only, prints frames)"
+    endchoice
+
+    config CAN_TWAI_TX_GPIO
+        int "TWAI TX GPIO Num"
+        range 0 SOC_GPIO_OUT_RANGE_MAX
+        default 4
+        help
+            GPIO number for TWAI TX to transceiver. Unused by the receiver.
+
+    config CAN_TWAI_RX_GPIO
+        int "TWAI RX GPIO Num"
+        range 0 SOC_GPIO_IN_RANGE_MAX
+        default 5
+        help
+            GPIO number for TWAI RX from transceiver.
+
+endmenu

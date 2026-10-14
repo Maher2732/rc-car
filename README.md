@@ -2,19 +2,20 @@
 
 A custom RC car built around ESP32 boards, with steering from an Xbox controller and a CAN bus link between boards.
 
-This repo has three ESP-IDF projects:
+All ESP32 firmware is one ESP-IDF project in `firmware/`. Pick what the board does in `idf.py menuconfig` → **RC Car Configuration → Board role**:
 
-| Project | What it does |
-|---------|--------------|
-| `ServoMotor/` | Steering servo driven by Xbox controller input over USB serial |
-| `can_node/` | CAN (TWAI) node: build as a sender (test frame every second) or a listen-only receiver |
+| Role | What it does |
+|------|--------------|
+| Steering servo | Drives the steering servo from angles received over USB serial (from `tools/controller.py`) |
+| CAN sender | Transmits a test frame every second over CAN (TWAI) |
+| CAN receiver | Listens on the CAN bus (listen-only) and prints received frames |
 
-## Steering (ServoMotor)
+## Steering (servo role)
 
 A custom RC car steered by an Xbox controller. A Python script on a PC reads the controller and streams steering angles over USB serial to an ESP32, which drives the steering servo with hardware PWM.
 
 ```
-Xbox controller ──► PC (controller.py) ──USB serial──► ESP32 (Servo_Main.c) ──PWM──► Steering servo
+Xbox controller ──► PC (controller.py) ──USB serial──► ESP32 (servo.c) ──PWM──► Steering servo
 ```
 
 ## Features
@@ -39,14 +40,19 @@ Steering is limited to a safe range of **100° (left) – 135° (center) – 170
 ## Project Structure
 
 ```
-ServoMotor/
-├── main/
-│   ├── Servo_Main.c     # ESP32 firmware: LEDC servo PWM + UART command parser
-│   └── controller.py    # PC bridge: Xbox controller → serial angle commands
-├── LidarML/             # Work in progress: RPLidar integration
+firmware/                  # single ESP-IDF project (one CMakeLists, one sdkconfig.defaults)
 ├── CMakeLists.txt
-└── sdkconfig
-can_node/                # ESP32 CAN node, sender or receiver chosen in menuconfig (main/main.c)
+├── sdkconfig.defaults
+└── main/
+    ├── main.c             # app_main: runs the role chosen in menuconfig
+    ├── servo.c            # LEDC servo PWM + UART command parser
+    ├── can_sender.c       # TWAI transmitter
+    ├── can_receiver.c     # TWAI listen-only receiver
+    ├── can.h
+    └── Kconfig.projbuild  # Board role + CAN pins
+tools/
+├── controller.py          # PC bridge: Xbox controller → serial angle commands
+└── LidarML/               # Work in progress: RPLidar integration
 ```
 
 ## Getting Started
@@ -56,7 +62,9 @@ can_node/                # ESP32 CAN node, sender or receiver chosen in menuconf
 Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) (developed on v6.1).
 
 ```bash
-cd ServoMotor
+cd firmware
+idf.py set-target esp32
+idf.py menuconfig   # RC Car Configuration → Board role: Steering servo
 idf.py build
 idf.py -p COM4 flash monitor
 ```
@@ -67,12 +75,12 @@ On boot the servo centers at 135° and prints `Xbox steering ready`.
 
 ```bash
 pip install pygame pyserial
-python ServoMotor/main/controller.py
+python tools/controller.py
 ```
 
 Set `ESP32_PORT` in `controller.py` to your board's serial port (default `COM4`). Close the ESP-IDF monitor first, since only one program can hold the port.
 
-## CAN Bus (can_node)
+## CAN Bus (sender / receiver roles)
 
 Two ESP32 boards talk over a CAN bus using the ESP-IDF on-chip TWAI driver (`esp_twai`). Each board needs a CAN transceiver (e.g. SN65HVD230) between the GPIOs and the bus.
 
@@ -84,13 +92,7 @@ Two ESP32 boards talk over a CAN bus using the ESP-IDF on-chip TWAI driver (`esp
 
 The receiver pushes frames from the RX interrupt into a FreeRTOS queue and prints the ID, DLC and data bytes. Because it is listen-only it never ACKs, so at least one other transmitting-capable node (the sender) must be on the bus along with proper 120 Ω termination at both ends.
 
-```bash
-cd can_node
-idf.py set-target esp32
-idf.py menuconfig   # CAN Node Configuration → Node role: Sender or Receiver
-idf.py build
-idf.py -p <PORT> flash monitor
-```
+Select **CAN sender** or **CAN receiver** as the board role in menuconfig, then build and flash as above.
 
 ## How It Works
 

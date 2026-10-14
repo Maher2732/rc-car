@@ -197,7 +197,7 @@ static void uart_init(void)
 // MAIN
 // ========================================
 
-void app_main(void)
+void servo_run(void)
 {
     servo_init();
     uart_init();
