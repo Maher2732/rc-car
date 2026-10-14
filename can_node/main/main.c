@@ -1,17 +1,57 @@
 #include <stdio.h>
+#include <inttypes.h>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/queue.h"
 #include "esp_twai.h"
 #include "esp_twai_onchip.h"
-#include <inttypes.h>
-#define TX_GPIO -1
-#define RX_GPIO 5
+
+#define RX_GPIO CONFIG_CAN_TWAI_RX_GPIO
 #define ESP_bitrate 500000
+
+#ifdef CONFIG_CAN_NODE_SENDER
+
+#define TX_GPIO CONFIG_CAN_TWAI_TX_GPIO
+#define depth_count 5
+
+void app_main(void){// onchip, enable, then transmit
+    twai_node_handle_t SENDER_NODE=NULL;
+    twai_onchip_node_config_t node_config={
+        .io_cfg={
+            .tx=TX_GPIO,
+            .rx=RX_GPIO,
+        },
+        .bit_timing={
+            .bitrate=ESP_bitrate,
+        },
+        .tx_queue_depth=depth_count,
+    };
+
+    ESP_ERROR_CHECK(twai_new_node_onchip(&node_config, &SENDER_NODE));
+    ESP_ERROR_CHECK(twai_node_enable(SENDER_NODE));
+
+    while(1){
+        uint8_t send_buff[8]={0,1,2,3,4,5,6,7};
+        twai_frame_t send_frame={
+            .header.id=0x1,
+            .header.ide=false,
+            .header.dlc=8,
+            .buffer=send_buff,
+            .buffer_len=sizeof(send_buff),
+        };
+        ESP_ERROR_CHECK(twai_node_transmit(SENDER_NODE,&send_frame,0));
+        printf("Message sent\n");
+        ESP_ERROR_CHECK(twai_node_transmit_wait_all_done(SENDER_NODE,-1));
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+#else // CONFIG_CAN_NODE_RECEIVER
+
 typedef struct{//custom type to hold frame data
     uint32_t id;//message ID
     uint8_t dlc;//length of data
-    uint8_t data[8];//store the data itself 
+    uint8_t data[8];//store the data itself
 }can_packet_t;
 
 static QueueHandle_t rx_queue=NULL;
@@ -29,8 +69,8 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
         };
 
         if(packet.dlc>8){
-             packet.dlc=8;
-            }
+            packet.dlc=8;
+        }
 
         for(int i=0;i<packet.dlc;i++){//copying the frame array to your typedef
             packet.data[i]=recv_buff[i];
@@ -38,23 +78,21 @@ static bool twai_rx_cb(twai_node_handle_t handle, const twai_rx_done_event_data_
         BaseType_t high_task_wakeup=pdFALSE;//send to queue
         if(xQueueSendFromISR(rx_queue,&packet,&high_task_wakeup)!=pdTRUE){
             return false;
-        };//bc its ISR you need to use fromISR
+        }//bc its ISR you need to use fromISR
         return high_task_wakeup==pdTRUE;
     }
     return false;
-};
-
+}
 
 void app_main(void){
     twai_node_handle_t listener_node=NULL;
     twai_onchip_node_config_t listener_config={
         .io_cfg={
-            .tx=TX_GPIO,
+            .tx=-1,
             .rx=RX_GPIO,
         },
         .bit_timing.bitrate=ESP_bitrate,
         .flags.enable_listen_only=true,
-       
     };
     ESP_ERROR_CHECK(twai_new_node_onchip(&listener_config,&listener_node));
     rx_queue=xQueueCreate(10,sizeof(can_packet_t));//sets the queue, 10 packet Q
@@ -63,7 +101,7 @@ void app_main(void){
         return;
     }
     twai_event_callbacks_t user_cbs={
-    .on_rx_done=twai_rx_cb,
+        .on_rx_done=twai_rx_cb,
     };
     ESP_ERROR_CHECK(twai_node_register_event_callbacks(listener_node,&user_cbs,NULL));
     ESP_ERROR_CHECK(twai_node_enable(listener_node));
@@ -82,3 +120,5 @@ void app_main(void){
         }
     }
 }
+
+#endif

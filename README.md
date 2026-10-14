@@ -7,8 +7,7 @@ This repo has three ESP-IDF projects:
 | Project | What it does |
 |---------|--------------|
 | `ServoMotor/` | Steering servo driven by Xbox controller input over USB serial |
-| `can_sender/` | CAN (TWAI) transmitter, sends a test frame once per second |
-| `can_receiver/` | CAN (TWAI) listen-only receiver, prints received frames |
+| `can_node/` | CAN (TWAI) node: build as a sender (test frame every second) or a listen-only receiver |
 
 ## Steering (ServoMotor)
 
@@ -47,8 +46,7 @@ ServoMotor/
 ├── LidarML/             # Work in progress: RPLidar integration
 ├── CMakeLists.txt
 └── sdkconfig
-can_sender/              # ESP32 CAN transmitter (main/main.c)
-can_receiver/            # ESP32 CAN listen-only receiver (main/main.c)
+can_node/                # ESP32 CAN node, sender or receiver chosen in menuconfig (main/main.c)
 ```
 
 ## Getting Started
@@ -74,22 +72,22 @@ python ServoMotor/main/controller.py
 
 Set `ESP32_PORT` in `controller.py` to your board's serial port (default `COM4`). Close the ESP-IDF monitor first, since only one program can hold the port.
 
-## CAN Bus (can_sender / can_receiver)
+## CAN Bus (can_node)
 
 Two ESP32 boards talk over a CAN bus using the ESP-IDF on-chip TWAI driver (`esp_twai`). Each board needs a CAN transceiver (e.g. SN65HVD230) between the GPIOs and the bus.
 
 | Setting | Value |
 |---------|-------|
 | Bitrate | 500 kbit/s |
-| Sender pins | TX **GPIO 4**, RX **GPIO 5** |
-| Receiver pins | RX **GPIO 5**, TX unused (listen-only) |
+| Pins (default) | TX **GPIO 4**, RX **GPIO 5**; the receiver doesn't use TX (listen-only) |
 | Test frame | ID `0x1`, standard 11-bit, 8 bytes `00 01 02 03 04 05 06 07`, sent every 1 s |
 
 The receiver pushes frames from the RX interrupt into a FreeRTOS queue and prints the ID, DLC and data bytes. Because it is listen-only it never ACKs, so at least one other transmitting-capable node (the sender) must be on the bus along with proper 120 Ω termination at both ends.
 
 ```bash
-cd can_sender      # or can_receiver
+cd can_node
 idf.py set-target esp32
+idf.py menuconfig   # CAN Node Configuration → Node role: Sender or Receiver
 idf.py build
 idf.py -p <PORT> flash monitor
 ```
