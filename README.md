@@ -20,7 +20,7 @@ Xbox controller ──► PC (controller.py) ──USB serial──► ESP32 (Se
 |------|-------|
 | ESP32 dev board | Running ESP-IDF firmware |
 | 270° servo | 500–2500 µs pulse range, signal on **GPIO 18** |
-| Xbox controller | Connected to the PC (USB or Bluetooth) |
+| Xbox controller | Currently connected to the PC; moving to a direct Bluetooth link to the ESP32 |
 | PC | Runs the Python controller bridge |
 
 Steering is limited to a safe range of **100° (left) – 135° (center) – 170° (right)**.
@@ -77,4 +77,4 @@ The duty is written to the LEDC channel, which outputs the 50 Hz PWM signal to t
 
 - [ ] Throttle / ESC control on the right trigger
 - [ ] RPLidar integration for obstacle detection
-- [ ] Wireless control (Bluetooth or Wi‑Fi) to remove the USB tether
+- [ ] Pair the Xbox controller directly to the ESP32 over Bluetooth using [Bluepad32](https://github.com/ricardoquesada/bluepad32), removing the PC bridge and USB tether
