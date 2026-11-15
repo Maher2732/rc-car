@@ -16,6 +16,7 @@
 #include "battery.h"
 #include "config.h"
 #include "speed_sensor.h"
+#include "can.h"
 
 static const char *TAG = "telemetry";
 
@@ -84,7 +85,7 @@ static void telemetry_task(void *arg)
 }
 
 
-void app_main(void)
+void telemetry_node_run(void)
 {
     speed_sensor_init();
     battery_init();

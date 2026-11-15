@@ -1,0 +1,23 @@
+idf_component_register(
+    SRCS
+        "main.c"
+        "can_sender.c"
+        "can_receiver.c"
+        "drive/drive_node.c"
+        "drive/actuators.c"
+        "drive/drive_logic.c"
+        "drive/gamepad.c"
+        "telemetry/telemetry_node.c"
+        "telemetry/battery.c"
+        "telemetry/speed_sensor.c"
+    INCLUDE_DIRS "."
+    REQUIRES
+        rc_common
+        esp_driver_ledc
+        esp_driver_twai
+        esp_driver_pcnt
+        esp_driver_gpio
+        esp_adc
+        bluepad32
+        btstack
+)

@@ -66,11 +66,11 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 | 2× ESP32 dev board | Classic ESP32 (needs Bluetooth Classic + BLE for Xbox controllers) |
 | Raspberry Pi | Any model with SPI; runs Raspberry Pi OS |
 | 3× CAN transceiver | SN65HVD230 for each ESP32; MCP2515 CAN HAT for the Pi |
-| RPLidar (A1/A2) | USB to the Pi |
+| Slamtec RPLIDAR A1M8 | 360°, 12 m range, USB to the Pi |
 | 270° steering servo | 500–2500 µs pulse range |
-| ESC + motor | Standard 1000–2000 µs RC ESC |
+| INJORA 540 35T brushed motor | Driven by a brushed RC ESC (1000–2000 µs, forward/reverse) |
 | Hall sensor + magnets | On a wheel or axle, for speed |
-| 2S LiPo | Battery voltage measured through a 100k / 33k divider |
+| Zeee 2S 7.4 V 2200 mAh LiPo | Voltage measured through a 100k / 33k divider |
 | Xbox Wireless Controller | Paired over Bluetooth |
 
 ### Wiring
@@ -81,8 +81,8 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 |-----------|-------------|
 | GPIO 18 | Steering servo signal |
 | GPIO 19 | ESC signal |
-| GPIO 21 | CAN transceiver TX |
-| GPIO 22 | CAN transceiver RX |
+| GPIO 4 | CAN transceiver TX |
+| GPIO 5 | CAN transceiver RX |
 
 **Telemetry node**
 
@@ -90,8 +90,10 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 |-----------|-------------|
 | GPIO 27 | Hall sensor output (internal pull-up) |
 | GPIO 34 | Battery divider midpoint |
-| GPIO 21 | CAN transceiver TX |
-| GPIO 22 | CAN transceiver RX |
+| GPIO 4 | CAN transceiver TX |
+| GPIO 5 | CAN transceiver RX |
+
+CAN pins default to GPIO 4 / 5 and can be changed in menuconfig.
 
 **CAN bus:** connect CANH to CANH and CANL to CANL on all three transceivers, put a **120 Ω terminator at each end** of the bus, and share a common ground. Power the servo from the ESC's BEC or a separate 5–6 V supply, not from the ESP32.
 
@@ -126,19 +128,31 @@ git submodule update --init --recursive
 
 ### 2. Flash the ESP32s
 
-Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) v6.1.
+Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) v6.1. Every ESP32 runs the same firmware project; you pick what each board does in menuconfig:
 
 ```bash
-cd firmware/drive_node
+cd firmware
+idf.py menuconfig
+```
+
+Go to **RC Car Configuration → Board role** and choose one:
+
+| Role | What it does |
+|------|--------------|
+| Drive node *(default)* | Xbox controller over Bluetooth, steering servo, ESC, applies Pi corrections |
+| Telemetry node | Wheel speed and battery monitoring |
+| CAN sender | Test tool: sends a frame every second |
+| CAN receiver | Test tool: listen-only, prints every frame on the bus |
+
+Then build and flash:
+
+```bash
 idf.py build flash monitor
 ```
 
-```bash
-cd firmware/telemetry_node
-idf.py build flash monitor
-```
+Changing role rewrites `sdkconfig`, so flash one board, change the role, and flash the next. The CAN sender/receiver roles are handy for checking the wiring and termination before running the real nodes.
 
-Tune pins, steering limits, speed modes and battery settings in each node's `main/config.h`.
+Tune pins, steering limits, speed modes and battery settings in `main/drive/config.h` and `main/telemetry/config.h`.
 
 ### 3. Set up the Raspberry Pi
 
@@ -177,24 +191,27 @@ Tune car width, braking deceleration and lidar mounting angle in [`pi/rc_pi/conf
 cd pi && python -m unittest discover -s tests -t . -v
 ```
 
-GitHub Actions runs these tests and builds both firmware images on every push.
+GitHub Actions runs these tests and builds the firmware in every board role on every push.
 
 ## Project Structure
 
 ```
-firmware/
-├── components/rc_common/      # Shared CAN driver + protocol header (both ESP32s)
-├── drive_node/                # ESP32 #1: Bluetooth controller, steering servo, ESC
-│   └── main/
-│       ├── gamepad.c          #   Bluepad32 platform: Xbox controller input
-│       ├── drive_logic.c      #   Merges driver input with Pi corrections and limits
-│       ├── actuators.c        #   Servo + ESC PWM
-│       └── config.h           #   Pins and tuning
-├── telemetry_node/            # ESP32 #2: wheel speed + battery monitor
-│   └── main/
-│       ├── speed_sensor.c     #   Hall sensor via hardware pulse counter
-│       ├── battery.c          #   Calibrated ADC, LiPo charge estimate, low/critical flags
-│       └── config.h
+firmware/                      # One ESP-IDF project, board role chosen in menuconfig
+├── main/
+│   ├── main.c                 #   Runs the selected role
+│   ├── Kconfig.projbuild      #   Board role + CAN pins
+│   ├── drive/                 #   Role: drive node
+│   │   ├── gamepad.c          #     Bluepad32 platform: Xbox controller input
+│   │   ├── drive_logic.c      #     Merges driver input with Pi corrections and limits
+│   │   ├── actuators.c        #     Servo + ESC PWM
+│   │   └── config.h           #     Pins and tuning
+│   ├── telemetry/             #   Role: telemetry node
+│   │   ├── speed_sensor.c     #     Hall sensor via hardware pulse counter
+│   │   ├── battery.c          #     Calibrated ADC, LiPo charge estimate, low/critical flags
+│   │   └── config.h
+│   ├── can_sender.c           #   Role: CAN test sender
+│   └── can_receiver.c         #   Role: CAN test receiver
+├── components/rc_common/      # Shared CAN driver + protocol header
 └── external/bluepad32/        # Submodule
 pi/
 ├── rc_pi/
@@ -203,7 +220,7 @@ pi/
 │   ├── can_link.py            # CAN send/receive
 │   ├── protocol.py            # Python mirror of the CAN protocol
 │   └── main.py                # 20 Hz main loop
-├── tests/                     # Unit tests (avoidance + protocol sync)
+├── tests/                     # Unit tests (avoidance, protocol sync, CAN link)
 └── deploy/                    # systemd service + CAN interface config
 ```
 

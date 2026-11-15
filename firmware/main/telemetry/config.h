@@ -4,11 +4,13 @@
 
 #pragma once
 
+#include "sdkconfig.h"
+
 
 // ---------- Pins ----------
 
-#define PIN_CAN_TX              21
-#define PIN_CAN_RX              22
+#define PIN_CAN_TX              CONFIG_CAN_TWAI_TX_GPIO     // set in menuconfig
+#define PIN_CAN_RX              CONFIG_CAN_TWAI_RX_GPIO
 #define PIN_WHEEL_SENSOR        27      // hall sensor output (open-drain, internal pull-up)
 #define PIN_BATTERY_SENSE       34      // ADC1, input-only pin
 

@@ -8,7 +8,7 @@ class AvoidanceConfig:
     # ---------- Car geometry ----------
     car_half_width: float = 0.10        # half the car's width
     path_margin: float = 0.08           # extra clearance on each side of the path
-    min_range: float = 0.12             # ignore returns closer than this (the car itself)
+    min_range: float = 0.15             # RPLIDAR A1M8 minimum range; also skips the car itself
 
     # Lidar angle that points straight ahead. RPLidar angles run clockwise
     # from the arrow on the sensor; set this if the lidar is mounted rotated.
@@ -17,7 +17,8 @@ class AvoidanceConfig:
     # ---------- Stopping distance ----------
     #   stop = buffer + speed * reaction + speed^2 / (2 * decel)
     stop_buffer: float = 0.25
-    reaction_time: float = 0.15         # CAN + control loop + ESC latency
+    # One A1M8 revolution (~5.5 Hz = ~180 ms) + CAN + control loop + ESC latency
+    reaction_time: float = 0.30
     braking_decel: float = 3.0          # m/s^2, measure on your surface
     release_hysteresis: float = 0.10    # must back off this far before unblocking
 

@@ -23,6 +23,7 @@
 #include "config.h"
 #include "drive_logic.h"
 #include "gamepad.h"
+#include "can.h"
 
 static const char *TAG = "drive";
 
@@ -207,7 +208,7 @@ static void control_task(void *arg)
 // MAIN
 // ========================================
 
-void app_main(void)
+void drive_node_run(void)
 {
     actuators_init();
     ESP_ERROR_CHECK(rc_can_start(PIN_CAN_TX, PIN_CAN_RX));

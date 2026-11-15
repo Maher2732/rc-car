@@ -22,14 +22,17 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        node: [drive_node, telemetry_node]
+        role: [DRIVE, TELEMETRY, CAN_SENDER, CAN_RECEIVER]
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - name: Build ${{ matrix.node }}
+      - name: Build ${{ matrix.role }} role
         uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v6.1
           target: esp32
-          path: firmware/${{ matrix.node }}
+          path: firmware
+          command: >-
+            echo "CONFIG_BOARD_ROLE_${{ matrix.role }}=y" > role.defaults &&
+            idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;role.defaults" build
