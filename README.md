@@ -71,7 +71,7 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 | 270° steering servo | 500–2500 µs pulse range |
 | INJORA 540 35T brushed motor | Crawler motor, runs straight off the 2S pack |
 | Treedix BTS7960 (43 A) | H-bridge motor driver, 20 kHz PWM |
-| 5–6 V UBEC / buck converter | Powers the servo and ESP32s from the LiPo (the BTS7960 has no BEC) |
+| 5–6 V 7 A UBEC | Set to 5 V; powers the servo and both ESP32s from the LiPo (the BTS7960 has no BEC) |
 | Hall sensor + magnets | On a wheel or axle, for speed |
 | Zeee 2S 7.4 V 2200 mAh LiPo | Voltage measured through a 100k / 33k divider |
 | Xbox Wireless Controller | Paired over Bluetooth |
@@ -104,6 +104,23 @@ CAN pins default to GPIO 4 / 5 and can be changed in menuconfig.
 **CAN bus:** connect CANH to CANH and CANL to CANL on all three transceivers, put a **120 Ω terminator at each end** of the bus, and share a common ground. Power the servo from a separate 5–6 V UBEC, not from the ESP32.
 
 **BTS7960:** connect B+ / B− to the LiPo and M+ / M− to the motor. Power its **VCC from the ESP32's 3.3 V**, not 5 V. Its input buffer then treats the ESP32's 3.3 V signals as a clean logic high; at 5 V they're borderline. Leave R_IS / L_IS unconnected.
+
+### Power
+
+```
+                ┌──► BTS7960 B+/B− ──► Motor
+2S LiPo 7.4 V ──┼──► UBEC (5 V) ──┬──► Steering servo (+/−)
+                │                 ├──► Drive ESP32 (5V/VIN pin)
+                │                 └──► Telemetry ESP32 (5V/VIN pin)
+                └──► Telemetry battery divider (100k / 33k)
+
+Raspberry Pi: its own 5 V 3 A+ supply (power bank or a second buck converter)
+```
+
+- **Set the UBEC to 5 V.** The ESP32 boards expect 5 V on their 5V/VIN pin, and most hobby servos are happy at 5 V. If your servo is rated for 6 V you'll get a bit more speed and torque at 6 V, but then power the ESP32s separately.
+- **Keep the Raspberry Pi off the servo's supply.** A servo straining under load pulls amps in bursts and drags the rail down, which can make the Pi brown out and corrupt its SD card. A Pi 4 alone wants 5 V / 3 A.
+- **Common ground.** Every negative wire (LiPo, UBEC, BTS7960, both ESP32s, Pi, CAN transceivers) must connect, or PWM and CAN signals have no reference.
+- **Don't plug in USB and the UBEC at once** on an ESP32 unless your board has a protection diode on its 5V pin.
 
 ## CAN Protocol
 
