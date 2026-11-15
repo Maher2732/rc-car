@@ -64,16 +64,17 @@ class ProtocolSyncTests(unittest.TestCase):
 
 class PackingTests(unittest.TestCase):
     def test_correction_round_trip(self):
-        original = protocol.Correction(7, protocol.CORR_FLAG_ACTIVE, -25, 40, 850)
+        original = protocol.Correction(7, protocol.CORR_FLAG_ACTIVE, -25, 40, 850, 420)
         self.assertEqual(protocol.Correction.unpack(original.pack()), original)
 
     def test_correction_values_are_clamped(self):
-        packed = protocol.Correction(300, 0, -500, 250, 99999).pack()
+        packed = protocol.Correction(300, 0, -500, 250, 99999, -5).pack()
         decoded = protocol.Correction.unpack(packed)
         self.assertEqual(decoded.counter, 300 & 0xFF)
         self.assertEqual(decoded.steer_offset_deg, -128)
         self.assertEqual(decoded.throttle_limit_pct, 100)
         self.assertEqual(decoded.nearest_obstacle_mm, protocol.NO_OBSTACLE_MM)
+        self.assertEqual(decoded.nearest_any_mm, 0)
 
     def test_battery_decode(self):
         data = struct.pack("<BBHBB", 1, protocol.BATT_FLAG_LOW, 7400, 35, 2)

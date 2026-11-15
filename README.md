@@ -1,6 +1,6 @@
 # RC Car
 
-An autonomous-assist RC car built on three networked computers. You drive it with an Xbox controller paired straight to an ESP32 over Bluetooth. A Raspberry Pi watches the road with a 360° lidar and steps in when you're about to hit something. A second ESP32 measures wheel speed and battery health. All three talk over a CAN bus, the same kind of network real cars use.
+An autonomous-assist RC car built on three networked computers. You drive it with an Xbox controller paired straight to an ESP32 over Bluetooth. A Raspberry Pi watches the road with a 360° lidar and steps in when you're about to hit something. A second ESP32 watches the battery and runs a 3.5" dashboard display. Both ESP32s live on one custom mainboard (see [`PCB/`](PCB/)). All three talk over a CAN bus, the same kind of network real cars use.
 
 ```
                     Bluetooth (Bluepad32)
@@ -12,9 +12,9 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
   ════════════════════════════ CAN bus, 500 kbit/s ═══╪══════════════════════════════
             │                                         │
   ┌─────────┴──────────────┐            ┌─────────────┴─────────┐
-  │  RASPBERRY PI          │            │  TELEMETRY NODE       │ ◄── Hall sensor (wheel)
+  │  RASPBERRY PI          │            │  TELEMETRY NODE       │ ──► 3.5" ILI9488 display
   │  lidar obstacle        │            │  (ESP32)              │ ◄── Battery voltage divider
-  │  avoidance             │            │  speed + battery      │
+  │  avoidance             │            │  battery + dashboard  │
   └─────────┬──────────────┘            └───────────────────────┘
             ▲
          RPLidar
@@ -23,8 +23,8 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 ## How It Works
 
 1. **You drive.** The drive node reads the controller over Bluetooth and drives the steering servo and the motor through a BTS7960 H-bridge. No PC and no cables.
-2. **The telemetry node measures.** It counts wheel pulses for speed and reads the battery voltage, then broadcasts both on the CAN bus.
-3. **The Pi watches.** Every lidar scan, it looks for anything inside the corridor the car is about to drive through. It works out a stopping distance from the *current speed*, so a faster car reacts earlier.
+2. **The telemetry node reports.** It reads the battery voltage and broadcasts it on the CAN bus, and its display shows whether the controller is connected, battery %, and the nearest object the lidar sees.
+3. **The Pi watches.** Every lidar scan, it looks for anything inside the corridor the car is about to drive through. It works out a stopping distance from the car's speed. There's no wheel-speed sensor, so it assumes a safe upper bound.
 4. **The Pi corrects.** It sends a correction addressed to the drive node (CAN ID `0x100`) at 20 Hz: a throttle limit, a steering nudge toward the side with more room, or a full forward block. The drive node merges this with your input. You stay in control, and the car just won't let you drive into a wall.
 
 ## Engineering Highlights
@@ -36,7 +36,6 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
   | Controller disconnects | Neutral throttle, centered steering |
   | Pi stops sending (crash, unplugged, booting) | Forward throttle capped at 50% |
   | Lidar stops producing scans | Pi caps throttle at 30% |
-  | Telemetry silent | Pi assumes a pessimistic speed for braking distance |
   | Battery critically low | Throttle capped at 30%, latched until reboot |
   | CAN controller goes bus-off | Automatic recovery |
 
@@ -72,7 +71,8 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 | INJORA 540 35T brushed motor | Crawler motor, runs straight off the 2S pack |
 | Treedix BTS7960 (43 A) | H-bridge motor driver, 20 kHz PWM |
 | 5–6 V 7 A UBEC | Set to 5 V; powers the servo and both ESP32s from the LiPo (the BTS7960 has no BEC) |
-| Hall sensor + magnets | On a wheel or axle, for speed |
+| 3.5" ILI9488 SPI display (480×320, touch) | Dashboard on the telemetry ESP32 |
+| RC Car Mainboard | Custom PCB carrying both ESP32s, CAN, power and connectors ([`PCB/`](PCB/)) |
 | Zeee 2S 7.4 V 2200 mAh LiPo | Voltage measured through a 100k / 33k divider |
 | Xbox Wireless Controller | Paired over Bluetooth |
 
@@ -94,8 +94,11 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 
 | ESP32 pin | Connects to |
 |-----------|-------------|
-| GPIO 27 | Hall sensor output (internal pull-up) |
 | GPIO 34 | Battery divider midpoint |
+| GPIO 18 / 23 / 19 | Display SPI clock / MOSI / MISO (touch) |
+| GPIO 13 / 21 / 22 | Display CS / DC / RESET |
+| GPIO 32 | Display backlight (low = on, via a MOSFET on the mainboard) |
+| GPIO 14 / 35 | Touch CS / IRQ (wired, not used yet) |
 | GPIO 4 | CAN transceiver TX |
 | GPIO 5 | CAN transceiver RX |
 
@@ -128,9 +131,9 @@ Classic CAN at 500 kbit/s, 11-bit IDs, little-endian. Full definition: [`rc_can_
 
 | ID | From → To | Rate | Contents |
 |----|-----------|------|----------|
-| `0x100` | Pi → Drive | 20 Hz | Steering offset, throttle limit, block-forward flag, nearest obstacle |
+| `0x100` | Pi → Drive (+ telemetry display) | 20 Hz | Steering offset, throttle limit, block-forward flag, nearest obstacle in the path and in any direction |
 | `0x200` | Drive → all | 20 Hz | Steering angle, throttle, status flags |
-| `0x300` | Telemetry → all | 20 Hz | Speed (mm/s), wheel RPM, odometer |
+| `0x300` | (reserved) | | Wheel speed, for a future speed sensor |
 | `0x301` | Telemetry → all | 5 Hz | Pack voltage, % charge, low/critical flags |
 
 Each message carries a rolling counter, and receivers treat a message older than 300 ms as "node offline".
@@ -165,7 +168,7 @@ Go to **RC Car Configuration → Board role** and choose one:
 | Role | What it does |
 |------|--------------|
 | Drive node *(default)* | Xbox controller over Bluetooth, steering servo, BTS7960 motor driver, applies Pi corrections |
-| Telemetry node | Wheel speed and battery monitoring |
+| Telemetry node | Battery monitoring and the dashboard display |
 | CAN sender | Test tool: sends a frame every second |
 | CAN receiver | Test tool: listen-only, prints every frame on the bus |
 
@@ -231,7 +234,8 @@ firmware/                      # One ESP-IDF project, board role chosen in menuc
 │   │   ├── actuators.c        #     Servo PWM + BTS7960 motor driver
 │   │   └── config.h           #     Pins and tuning
 │   ├── telemetry/             #   Role: telemetry node
-│   │   ├── speed_sensor.c     #     Hall sensor via hardware pulse counter
+│   │   ├── display.c          #     ILI9488 driver + 5x7 font
+│   │   ├── telemetry_node.c   #     Battery messages + dashboard screen
 │   │   ├── battery.c          #     Calibrated ADC, LiPo charge estimate, low/critical flags
 │   │   └── config.h
 │   ├── can_sender.c           #   Role: CAN test sender
@@ -247,10 +251,16 @@ pi/
 │   └── main.py                # 20 Hz main loop
 ├── tests/                     # Unit tests (avoidance, protocol sync, CAN link)
 └── deploy/                    # systemd service + CAN interface config
+PCB/
+├── generator/                 # Python that generates the KiCad schematic + board
+├── mainboard/                 # KiCad 10 project
+├── fab/                       # Gerbers, BOM, pick-and-place for PCBWay
+└── images/                    # 3D renders
 ```
 
 ## Roadmap
 
 - [ ] Block reverse when the lidar sees something behind the car
 - [ ] Log CAN traffic on the Pi for replay and tuning
-- [ ] Live dashboard (speed, battery, lidar view) served from the Pi
+- [ ] Use the display's touch panel (speed mode, steering trim)
+- [ ] Wheel-speed sensor for tighter braking distances

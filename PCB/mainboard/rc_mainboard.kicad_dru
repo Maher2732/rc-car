@@ -1,0 +1,11 @@
+(version 1)
+
+# The autorouter is asked for 0.2 mm clearance (net classes in the .kicad_pro). It sometimes
+# finishes a little tighter than KiCad measures, so DRC checks against what PCBWay's standard
+# process actually guarantees: 0.1 mm (4 mil) spacing and trace width. 0.15 / 0.12 keeps margin.
+
+(rule "fab_clearance"
+	(constraint clearance (min 0.15mm)))
+
+(rule "fab_track_width"
+	(constraint track_width (min 0.12mm)))

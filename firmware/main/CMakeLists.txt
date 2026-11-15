@@ -9,13 +9,13 @@ idf_component_register(
         "drive/gamepad.c"
         "telemetry/telemetry_node.c"
         "telemetry/battery.c"
-        "telemetry/speed_sensor.c"
+        "telemetry/display.c"
     INCLUDE_DIRS "."
     REQUIRES
         rc_common
         esp_driver_ledc
         esp_driver_twai
-        esp_driver_pcnt
+        esp_driver_spi
         esp_driver_gpio
         esp_adc
         bluepad32

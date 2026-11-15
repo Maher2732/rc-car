@@ -11,15 +11,20 @@
 
 #define PIN_CAN_TX              CONFIG_CAN_TWAI_TX_GPIO     // set in menuconfig
 #define PIN_CAN_RX              CONFIG_CAN_TWAI_RX_GPIO
-#define PIN_WHEEL_SENSOR        27      // hall sensor output (open-drain, internal pull-up)
 #define PIN_BATTERY_SENSE       34      // ADC1, input-only pin
 
+// 3.5" ILI9488 display + XPT2046 touch, sharing one SPI bus
+#define PIN_SPI_SCK             18
+#define PIN_SPI_MOSI            23
+#define PIN_SPI_MISO            19      // touch only: the ILI9488 never releases MISO
+#define PIN_LCD_CS              13
+#define PIN_LCD_DC              21
+#define PIN_LCD_RST             22
+#define PIN_LCD_BACKLIGHT       32      // drives a P-MOSFET on the mainboard: low = on
+#define PIN_TOUCH_CS            14      // held high (touch isn't used yet)
+#define PIN_TOUCH_IRQ           35
 
-// ---------- Wheel speed ----------
-
-#define WHEEL_DIAMETER_MM       100     // measure your wheel
-#define PULSES_PER_WHEEL_REV    4       // magnets on the wheel/axle
-#define SPEED_WINDOW_SAMPLES    5       // speed is averaged over this many samples
+#define LCD_SPI_HZ              26000000
 
 
 // ---------- Battery ----------
@@ -41,5 +46,6 @@
 
 // ---------- Timing ----------
 
-#define SPEED_PERIOD_MS         50      // 20 Hz
-#define BATTERY_PERIOD_MS       200     // 5 Hz
+#define LOOP_PERIOD_MS          50      // CAN polling
+#define BATTERY_PERIOD_MS       200     // 5 Hz battery message
+#define SCREEN_PERIOD_MS        200     // 5 Hz display refresh

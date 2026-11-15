@@ -62,9 +62,15 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(c.steer_offset_deg, 0)
         self.assertAlmostEqual(c.nearest_obstacle_mm, 5000, delta=10)    # forward distance, not range
 
+    def test_nearest_any_direction_includes_objects_off_the_path(self):
+        c = self.ctrl.update(wall(-3, 3, 4000) + wall(85, 95, 600), 0.0, 1.0)
+        self.assertAlmostEqual(c.nearest_any_mm, 600, delta=10)
+        self.assertGreater(c.nearest_obstacle_mm, 3000)      # the side object isn't in the path
+
     def test_empty_scan_sends_no_obstacle(self):
         c = self.ctrl.update([], 0.0, 1.0)
         self.assertEqual(c.nearest_obstacle_mm, NO_OBSTACLE_MM)
+        self.assertEqual(c.nearest_any_mm, NO_OBSTACLE_MM)
         self.assertFalse(c.flags & CORR_FLAG_ACTIVE)
 
     def test_close_obstacle_blocks_forward(self):

@@ -40,13 +40,14 @@ BATT_FLAG_CRITICAL = 1 << 1
 class Correction:
     """0x100  Pi -> drive node."""
 
-    FORMAT = "<BBbBH"
+    FORMAT = "<BBbBHH"
 
     counter: int = 0
     flags: int = 0
     steer_offset_deg: int = 0
     throttle_limit_pct: int = 100
-    nearest_obstacle_mm: int = NO_OBSTACLE_MM
+    nearest_obstacle_mm: int = NO_OBSTACLE_MM     # in the car's path
+    nearest_any_mm: int = NO_OBSTACLE_MM          # any direction, shown on the display
 
     def pack(self) -> bytes:
         return struct.pack(
@@ -56,6 +57,7 @@ class Correction:
             max(-128, min(127, self.steer_offset_deg)),
             max(0, min(100, self.throttle_limit_pct)),
             max(0, min(NO_OBSTACLE_MM, self.nearest_obstacle_mm)),
+            max(0, min(NO_OBSTACLE_MM, self.nearest_any_mm)),
         )
 
     @classmethod
@@ -81,7 +83,7 @@ class DriveStatus:
 
 @dataclass
 class Speed:
-    """0x300  telemetry -> all."""
+    """0x300  reserved: no speed sensor is fitted, so nothing sends this today."""
 
     FORMAT = "<BBHHH"
 

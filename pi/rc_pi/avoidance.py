@@ -133,10 +133,13 @@ class AvoidanceController:
             self._offset = 0.0
 
         nearest_mm = NO_OBSTACLE_MM if nearest is None else min(int(nearest * 1000), NO_OBSTACLE_MM)
+        any_m = min((p.distance for p in points), default=None)
+        any_mm = NO_OBSTACLE_MM if any_m is None else min(int(any_m * 1000), NO_OBSTACLE_MM)
 
         return Correction(
             flags=flags,
             steer_offset_deg=int(round(self._offset)),
             throttle_limit_pct=limit,
             nearest_obstacle_mm=nearest_mm,
+            nearest_any_mm=any_mm,
         )

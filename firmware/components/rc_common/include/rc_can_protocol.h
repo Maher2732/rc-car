@@ -12,7 +12,7 @@
 //   ID     Sender      Receiver(s)   Rate    Message
 //   0x100  Pi          Drive node    20 Hz   Obstacle correction
 //   0x200  Drive node  all           20 Hz   Drive status
-//   0x300  Telemetry   all           20 Hz   Wheel speed
+//   0x300  (reserved)                         Wheel speed, unused (no speed sensor fitted)
 //   0x301  Telemetry   all           5 Hz    Battery
 
 #pragma once
@@ -46,6 +46,7 @@ typedef struct __attribute__((packed)) {
     int8_t   steer_offset_deg;      // added to steering, positive = right
     uint8_t  throttle_limit_pct;    // max forward throttle, 0-100
     uint16_t nearest_obstacle_mm;   // closest object in the car's path
+    uint16_t nearest_any_mm;        // closest object in any direction (for the display)
 } rc_pi_correction_t;
 
 
@@ -69,7 +70,7 @@ typedef struct __attribute__((packed)) {
 
 
 // ========================================
-// 0x300  TELEMETRY -> ALL: WHEEL SPEED
+// 0x300  WHEEL SPEED (reserved: defined for a future speed sensor, not sent)
 // ========================================
 
 typedef struct __attribute__((packed)) {
@@ -97,7 +98,7 @@ typedef struct __attribute__((packed)) {
 } rc_battery_t;
 
 
-_Static_assert(sizeof(rc_pi_correction_t) == 6, "correction must be 6 bytes");
+_Static_assert(sizeof(rc_pi_correction_t) == 8, "correction must be 8 bytes");
 _Static_assert(sizeof(rc_drive_status_t) == 6, "drive status must be 6 bytes");
 _Static_assert(sizeof(rc_speed_t) == 8, "speed must be 8 bytes");
 _Static_assert(sizeof(rc_battery_t) == 6, "battery must be 6 bytes");
