@@ -1,0 +1,17 @@
+# Starts obstacle avoidance at boot and restarts it if it crashes.
+# Copy to /etc/systemd/system/rc-pi.service, then:
+#   sudo systemctl enable --now rc-pi
+[Unit]
+Description=RC car obstacle avoidance
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=pi
+WorkingDirectory=/home/pi/rc-car/pi
+ExecStart=/home/pi/rc-car/pi/.venv/bin/python -m rc_pi.main --lidar-port /dev/ttyUSB0 --can-channel can0
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

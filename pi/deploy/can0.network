@@ -1,0 +1,8 @@
+# Brings up the CAN interface at boot (systemd-networkd).
+# Copy to /etc/systemd/network/80-can0.network
+[Match]
+Name=can0
+
+[CAN]
+BitRate=500000
+RestartSec=100ms

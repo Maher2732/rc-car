@@ -1,80 +1,214 @@
 # RC Car
 
-A custom RC car steered by an Xbox controller. A Python script on a PC reads the controller and streams steering angles over USB serial to an ESP32, which drives the steering servo with hardware PWM.
+An autonomous-assist RC car built on three networked computers. You drive it with an Xbox controller paired straight to an ESP32 over Bluetooth. A Raspberry Pi watches the road with a 360° lidar and steps in when you're about to hit something. A second ESP32 measures wheel speed and battery health. All three talk over a CAN bus, the same kind of network real cars use.
 
 ```
-Xbox controller ──► PC (controller.py) ──USB serial──► ESP32 (Servo_Main.c) ──PWM──► Steering servo
+                    Bluetooth (Bluepad32)
+  Xbox controller  ─────────────────────►  ┌──────────────────────┐ ──PWM──► Steering servo
+                                           │  DRIVE NODE (ESP32)  │
+                                           │  steering + motor    │ ──PWM──► ESC ──► Motor
+                                           └──────────┬───────────┘
+                                                      │
+  ════════════════════════════ CAN bus, 500 kbit/s ═══╪══════════════════════════════
+            │                                         │
+  ┌─────────┴──────────────┐            ┌─────────────┴─────────┐
+  │  RASPBERRY PI          │            │  TELEMETRY NODE       │ ◄── Hall sensor (wheel)
+  │  lidar obstacle        │            │  (ESP32)              │ ◄── Battery voltage divider
+  │  avoidance             │            │  speed + battery      │
+  └─────────┬──────────────┘            └───────────────────────┘
+            ▲
+         RPLidar
 ```
 
-## Features
+## How It Works
 
-- **Analog steering** – left stick X axis maps proportionally to the servo angle, with a deadzone around center
-- **Hardware PWM** – ESP32 LEDC peripheral generates a 50 Hz, 16‑bit resolution servo signal
-- **Simple serial protocol** – newline‑terminated angle values (`135\n`), validated and clamped on the device
-- **Bandwidth friendly** – the PC only sends a command when the angle changes, polling at ~50 Hz
-- **Custom 3D‑printed parts** – drivetrain components such as the differential case and bearing
+1. **You drive.** The drive node reads the controller over Bluetooth and drives the steering servo and the ESC. No PC and no cables.
+2. **The telemetry node measures.** It counts wheel pulses for speed and reads the battery voltage, then broadcasts both on the CAN bus.
+3. **The Pi watches.** Every lidar scan, it looks for anything inside the corridor the car is about to drive through. It works out a stopping distance from the *current speed*, so a faster car reacts earlier.
+4. **The Pi corrects.** It sends a correction addressed to the drive node (CAN ID `0x100`) at 20 Hz: a throttle limit, a steering nudge toward the side with more room, or a full forward block. The drive node merges this with your input. You stay in control, and the car just won't let you drive into a wall.
+
+## Engineering Highlights
+
+- **Fail-safe by default.** Every link has a timeout, and losing one makes the car *more* cautious, never less:
+
+  | Fault | Response |
+  |-------|----------|
+  | Controller disconnects | Neutral throttle, centered steering |
+  | Pi stops sending (crash, unplugged, booting) | Forward throttle capped at 50% |
+  | Lidar stops producing scans | Pi caps throttle at 30% |
+  | Telemetry silent | Pi assumes a pessimistic speed for braking distance |
+  | Battery critically low | Throttle capped at 30%, latched until reboot |
+  | CAN controller goes bus-off | Automatic recovery |
+
+- **Speed-aware braking.** Stop distance = buffer + speed × reaction time + speed² / (2 × deceleration), with hysteresis so the block doesn't chatter at the threshold.
+- **Shared protocol, checked in CI.** The CAN message layout lives in one C header. A Python test parses that header and fails if the Pi's copy drifts.
+- **Pure, testable logic.** The rules for merging driver input with corrections (`drive_logic.c`) and the avoidance algorithm (`avoidance.py`) contain no hardware calls. The avoidance code has unit tests.
+- **Drivetrain protection.** Throttle can only rise at a limited rate, which protects the 3D-printed differential from shock loads. Letting off and braking still take effect instantly.
+- **Haptic feedback.** The controller rumbles when the Pi blocks forward motion.
+- **Real-time structure.** On the drive node, Bluetooth runs on core 0 and the 50 Hz control loop is pinned to core 1.
+
+## Controls
+
+| Input | Action |
+|-------|--------|
+| Left stick X | Steering |
+| Right trigger | Throttle |
+| Left trigger | Brake / reverse |
+| Y | Toggle slow (40%) / fast (100%) mode |
+| D-pad left / right | Steering trim (±1° per press) |
+
+**Pairing:** power on the drive node, then hold the pair button on top of the Xbox controller until the logo flashes quickly. After the first pairing, the controller reconnects automatically. Only one controller can connect at a time. To forget the pairing, run `idf.py erase-flash` and reflash.
 
 ## Hardware
 
 | Part | Notes |
 |------|-------|
-| ESP32 dev board | Running ESP-IDF firmware |
-| 270° servo | 500–2500 µs pulse range, signal on **GPIO 18** |
-| Xbox controller | Currently connected to the PC; moving to a direct Bluetooth link to the ESP32 |
-| PC | Runs the Python controller bridge |
+| 2× ESP32 dev board | Classic ESP32 (needs Bluetooth Classic + BLE for Xbox controllers) |
+| Raspberry Pi | Any model with SPI; runs Raspberry Pi OS |
+| 3× CAN transceiver | SN65HVD230 for each ESP32; MCP2515 CAN HAT for the Pi |
+| RPLidar (A1/A2) | USB to the Pi |
+| 270° steering servo | 500–2500 µs pulse range |
+| ESC + motor | Standard 1000–2000 µs RC ESC |
+| Hall sensor + magnets | On a wheel or axle, for speed |
+| 2S LiPo | Battery voltage measured through a 100k / 33k divider |
+| Xbox Wireless Controller | Paired over Bluetooth |
 
-Steering is limited to a safe range of **100° (left) – 135° (center) – 170° (right)**.
+### Wiring
+
+**Drive node**
+
+| ESP32 pin | Connects to |
+|-----------|-------------|
+| GPIO 18 | Steering servo signal |
+| GPIO 19 | ESC signal |
+| GPIO 21 | CAN transceiver TX |
+| GPIO 22 | CAN transceiver RX |
+
+**Telemetry node**
+
+| ESP32 pin | Connects to |
+|-----------|-------------|
+| GPIO 27 | Hall sensor output (internal pull-up) |
+| GPIO 34 | Battery divider midpoint |
+| GPIO 21 | CAN transceiver TX |
+| GPIO 22 | CAN transceiver RX |
+
+**CAN bus:** connect CANH to CANH and CANL to CANL on all three transceivers, put a **120 Ω terminator at each end** of the bus, and share a common ground. Power the servo from the ESC's BEC or a separate 5–6 V supply, not from the ESP32.
+
+## CAN Protocol
+
+Classic CAN at 500 kbit/s, 11-bit IDs, little-endian. Full definition: [`rc_can_protocol.h`](firmware/components/rc_common/include/rc_can_protocol.h).
+
+| ID | From → To | Rate | Contents |
+|----|-----------|------|----------|
+| `0x100` | Pi → Drive | 20 Hz | Steering offset, throttle limit, block-forward flag, nearest obstacle |
+| `0x200` | Drive → all | 20 Hz | Steering angle, throttle, status flags |
+| `0x300` | Telemetry → all | 20 Hz | Speed (mm/s), wheel RPM, odometer |
+| `0x301` | Telemetry → all | 5 Hz | Pack voltage, % charge, low/critical flags |
+
+Each message carries a rolling counter, and receivers treat a message older than 300 ms as "node offline".
+
+## Getting Started
+
+### 1. Clone with submodules
+
+Bluepad32 and BTstack are git submodules:
+
+```bash
+git clone --recursive https://github.com/Maher2732/rc-car.git
+```
+
+If you already cloned without `--recursive`:
+
+```bash
+git submodule update --init --recursive
+```
+
+### 2. Flash the ESP32s
+
+Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) v6.1.
+
+```bash
+cd firmware/drive_node
+idf.py build flash monitor
+```
+
+```bash
+cd firmware/telemetry_node
+idf.py build flash monitor
+```
+
+Tune pins, steering limits, speed modes and battery settings in each node's `main/config.h`.
+
+### 3. Set up the Raspberry Pi
+
+Enable the CAN HAT in `/boot/firmware/config.txt`. Match `oscillator` to the crystal on your HAT:
+
+```
+dtparam=spi=on
+dtoverlay=mcp2515-can0,oscillator=8000000,interrupt=25
+```
+
+Bring `can0` up at boot and install the code:
+
+```bash
+sudo cp pi/deploy/can0.network /etc/systemd/network/80-can0.network
+sudo systemctl enable --now systemd-networkd
+cd pi && python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
+```
+
+Run it by hand:
+
+```bash
+.venv/bin/python -m rc_pi.main --lidar-port /dev/ttyUSB0 --verbose
+```
+
+Or install it as a service that starts at boot:
+
+```bash
+sudo cp deploy/rc-pi.service /etc/systemd/system/ && sudo systemctl enable --now rc-pi
+```
+
+Tune car width, braking deceleration and lidar mounting angle in [`pi/rc_pi/config.py`](pi/rc_pi/config.py).
+
+### 4. Run the tests
+
+```bash
+cd pi && python -m unittest discover -s tests -t . -v
+```
+
+GitHub Actions runs these tests and builds both firmware images on every push.
 
 ## Project Structure
 
 ```
-ServoMotor/
-├── main/
-│   ├── Servo_Main.c     # ESP32 firmware: LEDC servo PWM + UART command parser
-│   └── controller.py    # PC bridge: Xbox controller → serial angle commands
-├── LidarML/             # Work in progress: RPLidar integration
-├── CMakeLists.txt
-└── sdkconfig
+firmware/
+├── components/rc_common/      # Shared CAN driver + protocol header (both ESP32s)
+├── drive_node/                # ESP32 #1: Bluetooth controller, steering servo, ESC
+│   └── main/
+│       ├── gamepad.c          #   Bluepad32 platform: Xbox controller input
+│       ├── drive_logic.c      #   Merges driver input with Pi corrections and limits
+│       ├── actuators.c        #   Servo + ESC PWM
+│       └── config.h           #   Pins and tuning
+├── telemetry_node/            # ESP32 #2: wheel speed + battery monitor
+│   └── main/
+│       ├── speed_sensor.c     #   Hall sensor via hardware pulse counter
+│       ├── battery.c          #   Calibrated ADC, LiPo charge estimate, low/critical flags
+│       └── config.h
+└── external/bluepad32/        # Submodule
+pi/
+├── rc_pi/
+│   ├── avoidance.py           # Obstacle detection + correction logic
+│   ├── lidar.py               # Background RPLidar reader with auto-reconnect
+│   ├── can_link.py            # CAN send/receive
+│   ├── protocol.py            # Python mirror of the CAN protocol
+│   └── main.py                # 20 Hz main loop
+├── tests/                     # Unit tests (avoidance + protocol sync)
+└── deploy/                    # systemd service + CAN interface config
 ```
-
-## Getting Started
-
-### 1. Flash the ESP32
-
-Requires [ESP-IDF](https://docs.espressif.com/projects/esp-idf/) (developed on v6.1).
-
-```bash
-cd ServoMotor
-idf.py build
-idf.py -p COM4 flash monitor
-```
-
-On boot the servo centers at 135° and prints `Xbox steering ready`.
-
-### 2. Run the controller bridge
-
-```bash
-pip install pygame pyserial
-python ServoMotor/main/controller.py
-```
-
-Set `ESP32_PORT` in `controller.py` to your board's serial port (default `COM4`). Close the ESP-IDF monitor first, since only one program can hold the port.
-
-## How It Works
-
-**PC side:** `pygame` reads the left stick (−1.0 to +1.0). Values inside the deadzone snap to center, then each half of the stick maps linearly onto its side of the steering range. The angle is sent as ASCII text over serial at 115200 baud.
-
-**ESP32 side:** UART0 bytes are buffered until a newline, parsed with `atoi`, and range‑checked (0–270°). The angle converts to a pulse width:
-
-```
-pulse_us = 500 + angle × (2500 − 500) / 270
-duty     = pulse_us × 65535 / 20000
-```
-
-The duty is written to the LEDC channel, which outputs the 50 Hz PWM signal to the servo.
 
 ## Roadmap
 
-- [ ] Throttle / ESC control on the right trigger
-- [ ] RPLidar integration for obstacle detection
-- [ ] Pair the Xbox controller directly to the ESP32 over Bluetooth using [Bluepad32](https://github.com/ricardoquesada/bluepad32), removing the PC bridge and USB tether
+- [ ] Block reverse when the lidar sees something behind the car
+- [ ] Log CAN traffic on the Pi for replay and tuning
+- [ ] Live dashboard (speed, battery, lidar view) served from the Pi

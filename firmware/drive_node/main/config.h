@@ -1,0 +1,66 @@
+// ========================================
+// DRIVE NODE CONFIGURATION
+// ========================================
+//
+// Everything you might need to tune for your car lives here.
+
+#pragma once
+
+
+// ---------- Pins ----------
+
+#define PIN_SERVO               18
+#define PIN_ESC                 19
+#define PIN_CAN_TX              21
+#define PIN_CAN_RX              22
+
+
+// ---------- Steering servo (270 degree) ----------
+
+#define SERVO_MIN_PULSE_US      500
+#define SERVO_MAX_PULSE_US      2500
+#define SERVO_MAX_ANGLE         270
+
+// Mechanical steering limits -- never command past these
+#define STEER_LEFT_DEG          100
+#define STEER_CENTER_DEG        135
+#define STEER_RIGHT_DEG         170
+
+#define STEER_TRIM_LIMIT_DEG    10      // max D-pad trim either way
+
+
+// ---------- ESC ----------
+
+#define ESC_MIN_PULSE_US        1000    // full reverse
+#define ESC_NEUTRAL_PULSE_US    1500
+#define ESC_MAX_PULSE_US        2000    // full forward
+#define ESC_ARM_MS              3000    // hold neutral at boot so the ESC arms
+
+
+// ---------- Controller ----------
+
+#define STICK_DEADZONE          0.08f
+#define TRIGGER_DEADZONE        0.05f
+
+
+// ---------- Speed limits (fraction of full throttle) ----------
+
+#define SPEED_MODE_SLOW         0.40f   // default after boot; Y toggles
+#define SPEED_MODE_FAST         1.00f
+#define MAX_REVERSE             0.50f
+
+// Throttle may rise this much per second; drops are instant.
+// Protects the 3D-printed drivetrain from shock loads.
+#define THROTTLE_RAMP_PER_S     3.0f
+
+// Applied when the Pi stops sending corrections (crashed, unplugged, booting)
+#define PI_LOST_LIMIT           0.50f
+
+// Applied when the telemetry node reports a critically low battery
+#define BATTERY_CRITICAL_LIMIT  0.30f
+
+
+// ---------- Timing ----------
+
+#define CONTROL_PERIOD_MS       20      // 50 Hz, matches the servo frame rate
+#define STATUS_PERIOD_MS        50      // 20 Hz drive status on CAN

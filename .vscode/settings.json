@@ -1,4 +1,4 @@
 {
     "idf.currentSetup": "C:\\esp\\v6.1\\esp-idf",
-    "cmake.sourceDirectory": "D:/RC/CODE/ServoMotor"
+    "cmake.sourceDirectory": "D:/RC/CODE/firmware/drive_node"
 }
