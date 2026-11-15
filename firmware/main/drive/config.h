@@ -12,7 +12,9 @@
 // ---------- Pins ----------
 
 #define PIN_SERVO               18
-#define PIN_ESC                 19
+#define PIN_MOTOR_RPWM          25      // BTS7960 RPWM: forward
+#define PIN_MOTOR_LPWM          26      // BTS7960 LPWM: reverse
+#define PIN_MOTOR_EN            33      // BTS7960 R_EN + L_EN tied together
 #define PIN_CAN_TX              CONFIG_CAN_TWAI_TX_GPIO     // set in menuconfig
 #define PIN_CAN_RX              CONFIG_CAN_TWAI_RX_GPIO
 
@@ -31,12 +33,17 @@
 #define STEER_TRIM_LIMIT_DEG    10      // max D-pad trim either way
 
 
-// ---------- ESC ----------
+// ---------- Motor (BTS7960 H-bridge, brushed 540) ----------
 
-#define ESC_MIN_PULSE_US        1000    // full reverse
-#define ESC_NEUTRAL_PULSE_US    1500
-#define ESC_MAX_PULSE_US        2000    // full forward
-#define ESC_ARM_MS              3000    // hold neutral at boot so the ESC arms
+#define MOTOR_PWM_FREQ_HZ       20000   // above hearing range, no motor whine
+
+// Changing direction while the motor still spins makes a big current spike
+// (plugging). Brake for this long before reversing.
+#define MOTOR_REVERSE_DELAY_MS  250
+
+// What the motor does at zero throttle: 1 = brake (crawler style, holds on
+// slopes and stops quickly when the Pi cuts throttle), 0 = coast
+#define MOTOR_DRAG_BRAKE        1
 
 
 // ---------- Controller ----------

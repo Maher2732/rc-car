@@ -6,7 +6,7 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
                     Bluetooth (Bluepad32)
   Xbox controller  ─────────────────────►  ┌──────────────────────┐ ──PWM──► Steering servo
                                            │  DRIVE NODE (ESP32)  │
-                                           │  steering + motor    │ ──PWM──► ESC ──► Motor
+                                           │  steering + motor    │ ──PWM──► BTS7960 ──► Motor
                                            └──────────┬───────────┘
                                                       │
   ════════════════════════════ CAN bus, 500 kbit/s ═══╪══════════════════════════════
@@ -22,7 +22,7 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 
 ## How It Works
 
-1. **You drive.** The drive node reads the controller over Bluetooth and drives the steering servo and the ESC. No PC and no cables.
+1. **You drive.** The drive node reads the controller over Bluetooth and drives the steering servo and the motor through a BTS7960 H-bridge. No PC and no cables.
 2. **The telemetry node measures.** It counts wheel pulses for speed and reads the battery voltage, then broadcasts both on the CAN bus.
 3. **The Pi watches.** Every lidar scan, it looks for anything inside the corridor the car is about to drive through. It works out a stopping distance from the *current speed*, so a faster car reacts earlier.
 4. **The Pi corrects.** It sends a correction addressed to the drive node (CAN ID `0x100`) at 20 Hz: a throttle limit, a steering nudge toward the side with more room, or a full forward block. The drive node merges this with your input. You stay in control, and the car just won't let you drive into a wall.
@@ -44,6 +44,7 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 - **Shared protocol, checked in CI.** The CAN message layout lives in one C header. A Python test parses that header and fails if the Pi's copy drifts.
 - **Pure, testable logic.** The rules for merging driver input with corrections (`drive_logic.c`) and the avoidance algorithm (`avoidance.py`) contain no hardware calls. The avoidance code has unit tests.
 - **Drivetrain protection.** Throttle can only rise at a limited rate, which protects the 3D-printed differential from shock loads. Letting off and braking still take effect instantly.
+- **Motor protection.** The H-bridge brakes for 250 ms before it reverses, so a full-speed forward-to-reverse flip never slams the spinning motor into reverse (a large current spike through the driver and the 3D-printed gears). Drag brake holds the crawler on slopes and stops it fast when the Pi cuts throttle. 20 kHz PWM keeps the motor quiet.
 - **Haptic feedback.** The controller rumbles when the Pi blocks forward motion.
 - **Real-time structure.** On the drive node, Bluetooth runs on core 0 and the 50 Hz control loop is pinned to core 1.
 
@@ -68,7 +69,9 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 | 3× CAN transceiver | SN65HVD230 for each ESP32; MCP2515 CAN HAT for the Pi |
 | Slamtec RPLIDAR A1M8 | 360°, 12 m range, USB to the Pi |
 | 270° steering servo | 500–2500 µs pulse range |
-| INJORA 540 35T brushed motor | Driven by a brushed RC ESC (1000–2000 µs, forward/reverse) |
+| INJORA 540 35T brushed motor | Crawler motor, runs straight off the 2S pack |
+| Treedix BTS7960 (43 A) | H-bridge motor driver, 20 kHz PWM |
+| 5–6 V UBEC / buck converter | Powers the servo and ESP32s from the LiPo (the BTS7960 has no BEC) |
 | Hall sensor + magnets | On a wheel or axle, for speed |
 | Zeee 2S 7.4 V 2200 mAh LiPo | Voltage measured through a 100k / 33k divider |
 | Xbox Wireless Controller | Paired over Bluetooth |
@@ -80,7 +83,10 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 | ESP32 pin | Connects to |
 |-----------|-------------|
 | GPIO 18 | Steering servo signal |
-| GPIO 19 | ESC signal |
+| GPIO 25 | BTS7960 RPWM (forward) |
+| GPIO 26 | BTS7960 LPWM (reverse) |
+| GPIO 33 | BTS7960 R_EN + L_EN (tied together) |
+| 3V3 | BTS7960 VCC (logic supply, see below) |
 | GPIO 4 | CAN transceiver TX |
 | GPIO 5 | CAN transceiver RX |
 
@@ -95,7 +101,9 @@ An autonomous-assist RC car built on three networked computers. You drive it wit
 
 CAN pins default to GPIO 4 / 5 and can be changed in menuconfig.
 
-**CAN bus:** connect CANH to CANH and CANL to CANL on all three transceivers, put a **120 Ω terminator at each end** of the bus, and share a common ground. Power the servo from the ESC's BEC or a separate 5–6 V supply, not from the ESP32.
+**CAN bus:** connect CANH to CANH and CANL to CANL on all three transceivers, put a **120 Ω terminator at each end** of the bus, and share a common ground. Power the servo from a separate 5–6 V UBEC, not from the ESP32.
+
+**BTS7960:** connect B+ / B− to the LiPo and M+ / M− to the motor. Power its **VCC from the ESP32's 3.3 V**, not 5 V. Its input buffer then treats the ESP32's 3.3 V signals as a clean logic high; at 5 V they're borderline. Leave R_IS / L_IS unconnected.
 
 ## CAN Protocol
 
@@ -139,7 +147,7 @@ Go to **RC Car Configuration → Board role** and choose one:
 
 | Role | What it does |
 |------|--------------|
-| Drive node *(default)* | Xbox controller over Bluetooth, steering servo, ESC, applies Pi corrections |
+| Drive node *(default)* | Xbox controller over Bluetooth, steering servo, BTS7960 motor driver, applies Pi corrections |
 | Telemetry node | Wheel speed and battery monitoring |
 | CAN sender | Test tool: sends a frame every second |
 | CAN receiver | Test tool: listen-only, prints every frame on the bus |
@@ -203,7 +211,7 @@ firmware/                      # One ESP-IDF project, board role chosen in menuc
 │   ├── drive/                 #   Role: drive node
 │   │   ├── gamepad.c          #     Bluepad32 platform: Xbox controller input
 │   │   ├── drive_logic.c      #     Merges driver input with Pi corrections and limits
-│   │   ├── actuators.c        #     Servo + ESC PWM
+│   │   ├── actuators.c        #     Servo PWM + BTS7960 motor driver
 │   │   └── config.h           #     Pins and tuning
 │   ├── telemetry/             #   Role: telemetry node
 │   │   ├── speed_sensor.c     #     Hall sensor via hardware pulse counter

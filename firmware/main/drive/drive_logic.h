@@ -2,7 +2,7 @@
 // DRIVE LOGIC
 // ========================================
 //
-// Pure function: driver input + Pi correction + battery state -> servo/ESC command.
+// Pure function: driver input + Pi correction + battery state -> servo/motor command.
 // No hardware access, so the rules are easy to read and reason about in one place.
 
 #pragma once

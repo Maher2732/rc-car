@@ -7,7 +7,7 @@
 //   - Obstacle corrections from the Raspberry Pi   (CAN 0x100)
 //   - Battery state from the telemetry node        (CAN 0x301)
 // Outputs:
-//   - Steering servo + ESC PWM
+//   - Steering servo PWM + BTS7960 motor driver
 //   - Drive status for the rest of the car         (CAN 0x200)
 
 #include <string.h>
@@ -90,6 +90,13 @@ static void read_can(bus_state_t *bus)
 static float ramp_throttle(float current, float target, float dt_s)
 {
     float step = THROTTLE_RAMP_PER_S * dt_s;
+
+    // Switching direction: drop to zero at once, then ramp up the other way
+    if ((current > 0 && target < 0) || (current < 0 && target > 0))
+    {
+        return 0.0f;
+    }
+
     bool speeding_up = (target > 0 && target > current) || (target < 0 && target < current);
 
     if (!speeding_up)
@@ -114,7 +121,6 @@ static void control_task(void *arg)
     float applied_throttle = 0.0f;
     uint8_t status_counter = 0;
     uint32_t last_status_ms = 0;
-    uint32_t start_ms = rc_millis();
     bool was_blocked = false;
     uint8_t last_flags = 0;
 
@@ -151,13 +157,6 @@ static void control_task(void *arg)
 
         drive_output_t out;
         drive_compute(&in, &out);
-
-        // ESC must see neutral for a while after power-up to arm
-        if (now - start_ms < ESC_ARM_MS)
-        {
-            out.throttle = 0.0f;
-            out.flags |= RC_DRIVE_FLAG_FAILSAFE;
-        }
 
         applied_throttle = ramp_throttle(applied_throttle, out.throttle, CONTROL_PERIOD_MS / 1000.0f);
 
